@@ -8,6 +8,8 @@ import fcntl
 import time
 import termios
 import json
+import array
+import struct
 
 
 class PyRunCommand(sublime_plugin.TextCommand):
@@ -18,7 +20,7 @@ class PyRunCommand(sublime_plugin.TextCommand):
 		print("selected " + str(index) + " - " + str(list(self.python_shells.values())[index]))
 		ss = self.view.settings()
 		ss.set("py_target", list(self.python_shells.keys())[index])
-		if self.command == "run":
+		if self.command and self.command == "run":
 			self.run(0)
 
 
@@ -26,19 +28,11 @@ class PyRunCommand(sublime_plugin.TextCommand):
 		bashCommand = "ps -o pid= -o command= -p " + term
 		process = subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
 		output, error = process.communicate()
-		# print ("1-"+output.decode("utf-8"))
-		output = output.decode("utf-8").replace("\t", " ").split(" ")[2].replace("\n", "")
-		# print ("2-"+output)
+		output = output.decode("utf-8").replace("\t", " ").split(" ")[1].replace("\n", "")
 		if output == "python" or output == "python3":
 			return output
 		return False
 
-	def term_exists(self, term):
-		if term in self.get_term_list():
-			print("terminal exists!!")
-			return True
-		print("terminal does not exist")
-		return False
 
 	def get_py_shells(self):
 		self.python_shells = {}
@@ -50,10 +44,7 @@ class PyRunCommand(sublime_plugin.TextCommand):
 			process = subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
 			output, error = process.communicate()
 			output = output.decode("utf-8")
-			# parts = re.split(r'\t+', output)
 			parts = output.replace("  ", " ").split(" ")
-			# print(" TERM " + term)
-			# print (parts)
 			if len(parts) == 3:
 				is_p = self.is_python_running(parts[2])
 				if is_p:
@@ -61,10 +52,6 @@ class PyRunCommand(sublime_plugin.TextCommand):
 					self.python_shells[term] = [is_p, parts[2]]
 					print(str([is_p, parts[2]]))
 
-
-	def get_term_list(self):
-		terminals = [f for f in listdir("/dev/pts/")]
-		return terminals
 
 	def select_terminal(self):
 		window = sublime.active_window()
@@ -75,58 +62,53 @@ class PyRunCommand(sublime_plugin.TextCommand):
 		window.show_quick_panel(names, self.on_done)
 
 
-	def num_tabs(self, stri):
-		for i in range(stri):
-			if stri[i]!= '\t':
-				return i
-		return 0
+	def write_to_console(self, text, target):
+		with open("/dev/pts/" + target, 'w') as fd:
+			for c in text:
+				fcntl.ioctl(fd, termios.TIOCSTI, c)
+				if c == '\n':
+					time.sleep(0.05)
+			if text[-1] != '\n':
+				fcntl.ioctl(fd, termios.TIOCSTI, '\n' )
+
 
 	def run(self, edit,**kwargs):
-		
+		window = sublime.active_window()
+		view = window.active_view()
 		self.get_py_shells()
 		if(kwargs):
 			self.command = kwargs['run']
 			if kwargs['run'] == "select_term":
-				print("selecting term")
 				self.select_terminal()
-				return
-				
+				return	
 		#get selected terminal from settings
 		ss = self.view.settings()
 		target = ss.get("py_target")
-		# print("settings target: "+ str(target))
 		if(target):
-			#check if terminal is running python
-			if( (not self.term_exists(target))):
+			#check if target terminal is running python
+			if( (not target in [f for f in listdir("/dev/pts/")])):
 				if (not self.is_python_running(target[1])):
 					self.select_terminal()
 		else:
-			# print("selecing")
 			self.select_terminal()
-		print ("hello")
-		target = ss.get("py_target")[0]
-		print("sending text to terminal " + target)
-		with open("/dev/pts/" + target, 'w') as fd:
-			window = sublime.active_window()
-			view = window.active_view()
-			sel = view.sel()
-			for region in sel:
-				selectionText = view.substr(region)
-				print(selectionText)
-				for c in selectionText:
-					fcntl.ioctl(fd, termios.TIOCSTI, c)
-					if c == '\n':
-						time.sleep(0.05)
-			
-			last_region_text = view.substr(sel[-1])
-
-			# for i in range(self.num_tabs(last_region_text.split('\n')[-1])):
-			if last_region_text[-1] != '\n':
-				fcntl.ioctl(fd, termios.TIOCSTI, '\n' )
-
-
-		# return
-		# terminals = self.get_term_list()
 		
-		# print(self.python_shells.values())
-		# 
+		#get target terminal from settings
+		target = ss.get("py_target")[0]
+		#get selected region
+		sel = view.sel()
+		total_text = []
+		#if only one cursor exists with no selection
+		#execute the line where the cursor is
+		if len(sel) == 1 and view.substr(sel[0]) == "":
+			#if only one cursor exists with no selection
+			#execute the line where the cursor is
+			line = view.line(sel[0])
+			total_text = view.substr(line)
+		else:
+			#concatenate all selected regions as text
+			for region in sel:
+				total_text += view.substr(region)
+			total_text = "".join(total_text)
+
+		self.write_to_console(total_text, target)
+		
