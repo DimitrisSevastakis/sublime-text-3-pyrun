@@ -3,13 +3,10 @@ import sublime
 from os import listdir
 from os.path import isfile, join
 import subprocess
-import re
 import fcntl
 import time
 import termios
-import json
-import array
-import struct
+
 
 
 class PyRunCommand(sublime_plugin.TextCommand):
@@ -17,7 +14,6 @@ class PyRunCommand(sublime_plugin.TextCommand):
 	def on_done(self, index):
 		if index < 0:
 			return
-		print("selected " + str(index) + " - " + str(list(self.python_shells.values())[index]))
 		ss = self.view.settings()
 		ss.set("py_target", list(self.python_shells.keys())[index])
 		if self.command and self.command == "run":
@@ -50,7 +46,6 @@ class PyRunCommand(sublime_plugin.TextCommand):
 				if is_p:
 					#check if python is running
 					self.python_shells[term] = [is_p, parts[2]]
-					print(str([is_p, parts[2]]))
 
 
 	def select_terminal(self):
@@ -58,7 +53,6 @@ class PyRunCommand(sublime_plugin.TextCommand):
 		names = []
 		for name, idd in list(self.python_shells.values()):
 			names.append(name)
-		print(list(self.python_shells.values()))
 		window.show_quick_panel(names, self.on_done)
 
 
@@ -110,5 +104,6 @@ class PyRunCommand(sublime_plugin.TextCommand):
 				total_text += view.substr(region)
 			total_text = "".join(total_text)
 
-		self.write_to_console(total_text, target)
+		if total_text.replace(" ", "").replace("\t","") != "":
+			self.write_to_console(total_text, target)
 		
